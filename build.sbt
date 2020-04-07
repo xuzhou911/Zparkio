@@ -1,4 +1,5 @@
 val projectName = IO.readLines(new File("PROJECT_NAME")).head
+val v = IO.readLines(new File("VERSION")).head
 
 val sparkVersion = "2.3.1"
 
@@ -34,24 +35,54 @@ lazy val commonSettings = Seq(
   pomIncludeRepository    := (_ => false)
 )
 
+lazy val root = (project in file("."))
+  .aggregate(library, testHelper, tests, projectExample, projectExampleMoreComplex)
+  .settings(
+    name := s"$projectName-$v"
+  )
+
 lazy val library = (project in file("Library"))
   .settings(
     commonSettings,
     name := projectName
   )
 
-lazy val testProject = (project in file("ProjectExample"))
+lazy val testHelper = (project in file("TestHelper"))
   .settings(
     commonSettings,
-    name           := s"${projectName}_testProject",
-    publish / skip := true
+    name := s"$projectName-test",
+    libraryDependencies ++= Seq(
+      "com.holdenkarau"  %% "spark-testing-base" % s"${sparkVersion}_0.10.0",
+      "org.apache.spark" %% "spark-hive"         % sparkVersion % Provided
+    )
   )
   .dependsOn(library)
 
-lazy val testProjectTwo = (project in file("ProjectExample_MoreComplex"))
+lazy val tests = (project in file("tests"))
   .settings(
     commonSettings,
-    name           := s"${projectName}_testProject_moreComplex",
+    name           := s"${projectName}_tests",
     publish / skip := true
   )
-  .dependsOn(library)
+  .dependsOn(
+    library    % Test,
+    testHelper % Test
+  )
+
+lazy val projectExample = (project in file("ProjectExample"))
+  .settings(
+    commonSettings,
+    name                       := s"${projectName}_testProject",
+    publish / skip             := true,
+    assemblyOption in assembly := safetyAssemblySettings.value
+  ).enablePlugins(DockerPlugin)
+  .dependsOn(library, testHelper % Test)
+
+lazy val projectExampleMoreComplex = (project in file("ProjectExample_MoreComplex"))
+  .settings(
+    commonSettings,
+    name                       := s"${projectName}_testProject_moreComplex",
+    publish / skip             := true,
+    assemblyOption in assembly := safetyAssemblySettings.value
+  ).enablePlugins(DockerPlugin)
+  .dependsOn(library, testHelper % Test)

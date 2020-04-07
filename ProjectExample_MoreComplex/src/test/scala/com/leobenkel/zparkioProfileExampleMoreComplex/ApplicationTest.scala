@@ -1,30 +1,44 @@
 package com.leobenkel.zparkioProfileExampleMoreComplex
 
-import com.leobenkel.zparkio.Services.{CommandLineArguments, Logger, SparkModule}
+import com.leobenkel.zparkio.Services._
 import com.leobenkel.zparkioProfileExampleMoreComplex.Items.{Post, User}
 import com.leobenkel.zparkioProfileExampleMoreComplex.Services.{Database, FileIO}
-import com.leobenkel.zparkioProfileExampleMoreComplex.TestUtils.TestWithSpark
-import org.apache.spark.sql.{Dataset, Encoder, SparkSession}
+import com.leobenkel.zparkiotest.TestWithSpark
+import org.apache.spark.sql._
+import org.scalatest.FreeSpec
 import zio.Exit.{Failure, Success}
+import zio.ZIO
 import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.console.Console
 import zio.random.Random
 import zio.system.System
 
-class ApplicationTest extends TestWithSpark {
+class ApplicationTest extends FreeSpec with TestWithSpark {
   "Full application" - {
     "Run" in {
-      TestApp.unsafeRunSync(TestApp.run(Nil)) match {
+      val testApp = TestApp(spark)
+      testApp.makeRuntime.unsafeRunSync(testApp.runTest(Nil)) match {
         case Success(value) =>
           println(s"Read exit code: $value")
           assertResult(0)(value)
+        case Failure(cause) => fail(cause.prettyPrint)
+      }
+    }
+
+    "Wrong argument" in {
+      val testApp = TestApp(spark)
+      testApp.makeRuntime.unsafeRunSync(testApp.runTest("--bar" :: "foo" :: Nil)) match {
+        case Success(value) =>
+          println(s"Read: $value")
+          assertResult(1)(value)
         case Failure(cause) => fail(cause.prettyPrint)
       }
     }
 
     "Help" in {
-      TestApp.unsafeRunSync(TestApp.run("--help" :: Nil)) match {
+      val testApp = TestApp(spark)
+      testApp.makeRuntime.unsafeRunSync(testApp.runTest("--help" :: Nil)) match {
         case Success(value) =>
           println(s"Read exit code: $value")
           assertResult(0)(value)
@@ -34,18 +48,26 @@ class ApplicationTest extends TestWithSpark {
   }
 }
 
-object TestApp extends Application {
+case class TestApp(s: SparkSession) extends Application {
   override def makeEnvironment(
-    cliService:   Arguments,
-    sparkService: SparkModule.Service
+    cliService:    Arguments,
+    loggerService: Logger.Service,
+    sparkService:  SparkModule.Service
   ): RuntimeEnv.APP_ENV = {
-    TestEnv(cliService, sparkService)
+    TestEnv(cliService, loggerService, new SparkModule.Service {
+      lazy final override val spark: SparkSession = s
+    })
+  }
+
+  def runTest(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
+    super.run(args)
   }
 }
 
 case class TestEnv(
-  cliService:   Arguments,
-  sparkService: SparkModule.Service
+  cliService:    Arguments,
+  loggerService: Logger.Service,
+  sparkService:  SparkModule.Service
 ) extends System.Live with Console.Live with Clock.Live with Random.Live with Blocking.Live
     with CommandLineArguments[Arguments] with Logger with FileIO.Live with SparkModule
     with Database {

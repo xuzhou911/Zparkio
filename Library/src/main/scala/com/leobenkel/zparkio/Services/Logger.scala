@@ -1,7 +1,7 @@
 package com.leobenkel.zparkio.Services
 
-import zio.ZIO
 import zio.console.Console
+import zio.{Task, ZIO}
 
 trait Logger {
   def log: Logger.Service
@@ -9,20 +9,31 @@ trait Logger {
 
 object Logger {
   trait Service {
-    def info(txt:  String): ZIO[Any with Console, Nothing, Unit]
-    def error(txt: String): ZIO[Any with Console, Nothing, Unit]
-    def debug(txt: String): ZIO[Any with Console, Nothing, Unit]
+    def info(txt:  => String): ZIO[Console, Throwable, Unit]
+    def error(txt: => String): ZIO[Console, Throwable, Unit]
+    def debug(txt: => String): ZIO[Console, Throwable, Unit]
   }
 
-  def info(txt: String): ZIO[Any with Console with Logger, Nothing, Unit] = {
-    ZIO.environment[Logger].flatMap(_.log.info(txt))
+  def displayAllErrors(ex: Throwable): ZIO[Any with Console with Logger, Throwable, Unit] = {
+    for {
+      _ <- Logger.error(s"!!! Error: ${ex.toString}:")
+      _ <- ZIO.foreach(ex.getStackTrace)(st => Logger.error(s"  -   $st"))
+      _ <- Option(ex.getCause)
+        .fold[ZIO[Any with Console with Logger, Throwable, Unit]](Task(()))(displayAllErrors)
+    } yield {
+      ()
+    }
   }
 
-  def error(txt: String): ZIO[Any with Console with Logger, Nothing, Unit] = {
-    ZIO.environment[Logger].flatMap(_.log.error(txt))
+  def info(txt: => String): ZIO[Console with Logger, Throwable, Unit] = {
+    ZIO.accessM[Console with Logger](_.log.info(txt))
   }
 
-  def debug(txt: String): ZIO[Any with Console with Logger, Nothing, Unit] = {
-    ZIO.environment[Logger].flatMap(_.log.debug(txt))
+  def error(txt: => String): ZIO[Console with Logger, Throwable, Unit] = {
+    ZIO.accessM[Console with Logger](_.log.error(txt))
+  }
+
+  def debug(txt: => String): ZIO[Console with Logger, Throwable, Unit] = {
+    ZIO.accessM[Console with Logger](_.log.debug(txt))
   }
 }
